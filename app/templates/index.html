@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Food Ordering App</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f4f7f6; color: #333; }
+        h1 { color: #2c3e50; text-align: center; margin-bottom: 30px; }
+        h2 { color: #34495e; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-top: 20px; }
+        h3 { color: #555; margin-top: 15px; }
+        .container { display: flex; justify-content: space-around; flex-wrap: wrap; gap: 20px; }
+        .col { background-color: #fff; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); flex: 1; min-width: 300px; }
+        form { margin-bottom: 20px; padding: 15px; border: 1px solid #e0e0e0; border-radius: 5px; background-color: #fdfdfd; }
+        input[type="text"], input[type="number"], select { width: calc(100% - 22px); padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 4px; }
+        button { background-color: #4CAF50; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 10px; }
+        button:hover { background-color: #45a049; }
+        button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        ul { list-style-type: none; padding: 0; }
+        li { background-color: #f9f9f9; border: 1px solid #eee; margin-bottom: 5px; padding: 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        li button { margin-left: 10px; padding: 5px 10px; font-size: 14px; }
+        #restaurant-list li { cursor: pointer; }
+        #restaurant-list li:hover { background-color: #e9e9e9; }
+        .restaurant-order-group { border: 1px solid #dcdcdc; border-radius: 8px; padding: 15px; margin-bottom: 20px; background-color: #fdfdfd; }
+        .restaurant-order-group h2 { border-bottom: 1px solid #eee; padding-bottom: 8px; margin-top: 0; color: #2c3e50; }
+        .order-item-card { border: 1px solid #eee; border-radius: 5px; padding: 10px; margin-top: 10px; background-color: #ffffff; }
+        .locked-order { opacity: 0.7; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <h1>Food Ordering App</h1>
+    <div class="container">
+        <div class="col">
+            <!-- Restaurants -->
+            <h2>Restaurants</h2>
+            <form id="add-restaurant-form">
+                <input type="text" id="new-restaurant-name" placeholder="New restaurant name" required>
+                <button type="submit">Add Restaurant</button>
+            </form>
+            <ul id="restaurant-list"></ul>
+
+            <!-- Menu -->
+            <div id="menu-section">
+                <h3 id="menu-title">Select a restaurant to manage its menu</h3>
+                <form id="add-menu-item-form">
+                    <input type="text" id="new-item-name" placeholder="New item name" required>
+                    <input type="number" id="new-item-price" placeholder="Price" step="0.01" required>
+                    <button type="submit">Add Menu Item</button>
+                </form>
+                <ul id="menu-item-list"></ul>
+            </div>
+        </div>
+        <div class="col">
+            <!-- Order -->
+            <h2>Place an Order</h2>
+            <form id="place-order-form">
+                <div>
+                    <label>Restaurant:</label>
+                    <select id="order-restaurant-select" required></select>
+                </div>
+                <div>
+                    <label>Your Name (for the order):</label>
+                    <input type="text" id="orderer-name" required>
+                </div>
+                <div id="order-menu-section" style="display:none;">
+                    <h3>Menu</h3>
+                    <input type="text" id="order-user-name" placeholder="Your name for item">
+                    <ul id="order-menu-list"></ul>
+                </div>
+                <h3>Current Order</h3>
+                <ul id="current-order-list"></ul>
+                <button type="submit">Place Order</button>
+            </form>
+        </div>
+        <div class="col">
+            <!-- Order History -->
+            <h2>Order History</h2>
+            <div id="order-history"></div>
+        </div>
+    </div>
+
+    <script>
+        const apiUrl = '/api';
+
+        const restaurantList = document.getElementById('restaurant-list');
+        const addRestaurantForm = document.getElementById('add-restaurant-form');
+        const newRestaurantNameInput = document.getElementById('new-restaurant-name');
+
+        const menuSection = document.getElementById('menu-section');
+        const menuTitle = document.getElementById('menu-title');
+        const menuItemList = document.getElementById('menu-item-list');
+        const addMenuItemForm = document.getElementById('add-menu-item-form');
+        const newItemNameInput = document.getElementById('new-item-name');
+        const newItemPriceInput = document.getElementById('new-item-price');
+
+        const orderRestaurantSelect = document.getElementById('order-restaurant-select');
+        const ordererNameInput = document.getElementById('orderer-name');
+        const orderMenuSection = document.getElementById('order-menu-section');
+        const orderMenuList = document.getElementById('order-menu-list');
+        const orderUserNameInput = document.getElementById('order-user-name');
+        const currentOrderList = document.getElementById('current-order-list');
+        const placeOrderForm = document.getElementById('place-order-form');
+
+        const orderHistory = document.getElementById('order-history');
+
+        let selectedRestaurantId = null;
+        let currentOrderItems = [];
+
+        // Fetch and display restaurants
+        const fetchRestaurants = async () => {
+            const response = await fetch(`${apiUrl}/restaurants`);
+            const restaurants = await response.json();
+            restaurantList.innerHTML = '';
+            orderRestaurantSelect.innerHTML = '<option value="">Select a restaurant</option>';
+            restaurants.forEach(r => {
+                const li = document.createElement('li');
+                li.textContent = r.name;
+                li.style.cursor = 'pointer';
+                li.onclick = () => selectRestaurant(r);
+
+                const editButton = document.createElement('button');
+                editButton.textContent = 'Edit';
+                editButton.onclick = (e) => { e.stopPropagation(); editRestaurant(r.id, r.name); };
+                li.appendChild(editButton);
+
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Delete';
+                deleteButton.style.backgroundColor = '#e74c3c';
+                deleteButton.onclick = (e) => { e.stopPropagation(); deleteRestaurant(r.id); };
+                li.appendChild(deleteButton);
+
+                restaurantList.appendChild(li);
+
+                const option = document.createElement('option');
+                option.value = r.id;
+                option.textContent = r.name;
+                orderRestaurantSelect.appendChild(option);
+            });
+        };
+
+        // Edit a restaurant
+        const editRestaurant = async (id, currentName) => {
+            const newName = prompt('Enter new name for restaurant:', currentName);
+            if (newName && newName.trim() !== '') {
+                await fetch(`${apiUrl}/restaurants/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newName }),
+                });
+                fetchRestaurants();
+            }
+        };
+
+        // Delete a restaurant
+        const deleteRestaurant = async (id) => {
+            if (confirm('Are you sure you want to delete this restaurant and all its associated menus and orders?')) {
+                await fetch(`${apiUrl}/restaurants/${id}`, { method: 'DELETE' });
+                fetchRestaurants();
+                fetchOrderHistory(); // Refresh order history as well
+                // If the deleted restaurant was selected, clear menu and order sections
+                if (selectedRestaurantId === id) {
+                    selectedRestaurantId = null;
+                    menuTitle.textContent = 'Select a restaurant to manage its menu';
+                    menuItemList.innerHTML = '';
+                    addMenuItemForm.querySelector('button[type="submit"]').disabled = true;
+                    newItemNameInput.disabled = true;
+                    newItemPriceInput.disabled = true;
+                    orderMenuSection.style.display = 'none';
+                    currentOrderItems = [];
+                    renderCurrentOrder();
+                }
+            }
+        };
+
+        // Select a restaurant to view/edit its menu
+        const selectRestaurant = async (restaurant) => {
+            selectedRestaurantId = restaurant.id;
+            menuTitle.textContent = `${restaurant.name} Menu`;
+            addMenuItemForm.querySelector('button[type="submit"]').disabled = false;
+            newItemNameInput.disabled = false;
+            newItemPriceInput.disabled = false;
+
+            const response = await fetch(`${apiUrl}/restaurants/${restaurant.id}/menu`);
+            const menuItems = await response.json();
+            menuItemList.innerHTML = '';
+            menuItems.forEach(item => {
+                const li = document.createElement('li');
+                li.textContent = `${item.name} - $${item.price}`;
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Delete';
+                deleteButton.onclick = () => deleteMenuItem(item.id);
+                li.appendChild(deleteButton);
+                menuItemList.appendChild(li);
+            });
+        };
+
+        // Add a new restaurant
+        addRestaurantForm.onsubmit = async (e) => {
+            e.preventDefault();
+            await fetch(`${apiUrl}/restaurants`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newRestaurantNameInput.value }),
+            });
+            newRestaurantNameInput.value = '';
+            fetchRestaurants();
+        };
+
+        // Add a new menu item
+        addMenuItemForm.onsubmit = async (e) => {
+            e.preventDefault();
+            if (!selectedRestaurantId) {
+                alert('Please select a restaurant first.');
+                return;
+            }
+            await fetch(`${apiUrl}/restaurants/${selectedRestaurantId}/menu`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newItemNameInput.value, price: newItemPriceInput.value }),
+            });
+            newItemNameInput.value = '';
+            newItemPriceInput.value = '';
+            selectRestaurant({ id: selectedRestaurantId, name: menuTitle.textContent.replace(' Menu', '') });
+        };
+
+        // Delete a menu item
+        const deleteMenuItem = async (id) => {
+            if (confirm('Are you sure you want to delete this menu item?')) {
+                await fetch(`${apiUrl}/menu/${id}`, { method: 'DELETE' });
+                selectRestaurant({ id: selectedRestaurantId, name: menuTitle.textContent.replace(' Menu', '') });
+            }
+        };
+
+        // Handle restaurant selection for ordering
+        orderRestaurantSelect.onchange = async () => {
+            const restaurantId = orderRestaurantSelect.value;
+            if (restaurantId) {
+                orderMenuSection.style.display = 'block';
+                const response = await fetch(`${apiUrl}/restaurants/${restaurantId}/menu`);
+                const menuItems = await response.json();
+                orderMenuList.innerHTML = '';
+                menuItems.forEach(item => {
+                    const li = document.createElement('li');
+                    li.textContent = `${item.name} - $${item.price}`;
+                    const addButton = document.createElement('button');
+                    addButton.textContent = 'Add to Order';
+                    addButton.type = 'button';
+                    addButton.onclick = () => addItemToOrder(item);
+                    li.appendChild(addButton);
+                    orderMenuList.appendChild(li);
+                });
+            } else {
+                orderMenuSection.style.display = 'none';
+            }
+        };
+
+        // Add an item to the current order
+        const addItemToOrder = (item) => {
+            if (orderUserNameInput.value.trim() === '') {
+                alert('Please enter your name for the item');
+                return;
+            }
+            currentOrderItems.push({ user_name: orderUserNameInput.value, item_name: item.name });
+            renderCurrentOrder();
+        };
+
+        // Render the current order list
+        const renderCurrentOrder = () => {
+            currentOrderList.innerHTML = '';
+            currentOrderItems.forEach(item => {
+                const li = document.createElement('li');
+                li.textContent = `${item.user_name}: ${item.item_name}`;
+                currentOrderList.appendChild(li);
+            });
+        };
+
+        // Place an order
+        placeOrderForm.onsubmit = async (e) => {
+            e.preventDefault();
+            if (currentOrderItems.length === 0) {
+                alert('Please add items to the order');
+                return;
+            }
+            await fetch(`${apiUrl}/orders`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    restaurant_id: orderRestaurantSelect.value,
+                    orderer_name: ordererNameInput.value,
+                    items: currentOrderItems,
+                }),
+            });
+            alert('Order placed successfully!');
+            placeOrderForm.reset();
+            currentOrderItems = [];
+            renderCurrentOrder();
+            orderMenuSection.style.display = 'none';
+            fetchOrderHistory();
+        };
+
+        // Fetch and display order history
+        const fetchOrderHistory = async () => {
+            const response = await fetch(`${apiUrl}/orders`);
+            const orders = await response.json();
+            orderHistory.innerHTML = '';
+
+            const groupedOrders = {};
+            orders.forEach(order => {
+                if (!groupedOrders[order.restaurant_name]) {
+                    groupedOrders[order.restaurant_name] = [];
+                }
+                groupedOrders[order.restaurant_name].push(order);
+            });
+
+            for (const restaurantName in groupedOrders) {
+                const restaurantDiv = document.createElement('div');
+                restaurantDiv.className = 'restaurant-order-group';
+                restaurantDiv.innerHTML = `<h2>${restaurantName} Orders</h2>`;
+
+                groupedOrders[restaurantName].forEach(order => {
+                    const orderDiv = document.createElement('div');
+                    orderDiv.className = 'order-item-card';
+                    orderDiv.innerHTML = `
+                        <p><strong>Orderer:</strong> ${order.orderer_name}</p>
+                        <p><strong>Date:</strong> ${new Date(order.created_at).toLocaleString()}</p>
+                        <ul>
+                            ${order.items.map(item => `<li>${item.user_name}: ${item.item_name}</li>`).join('')}
+                        </ul>
+                    `;
+                    restaurantDiv.appendChild(orderDiv);
+                });
+                orderHistory.appendChild(restaurantDiv);
+            }
+        };
+
+        // Initial data load
+        fetchRestaurants();
+        fetchOrderHistory();
+
+        // Initial state for menu section
+        menuTitle.textContent = 'Select a restaurant to manage its menu';
+        addMenuItemForm.querySelector('button[type="submit"]').disabled = true;
+        newItemNameInput.disabled = true;
+        newItemPriceInput.disabled = true;
+    </script>
+</body>
+</html>
