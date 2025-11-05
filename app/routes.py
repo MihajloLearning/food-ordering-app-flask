@@ -68,20 +68,80 @@ def register_routes(app):
                 'restaurant_name': o.restaurant.name,
                 'orderer_name': o.orderer_name,
                 'created_at': o.created_at.isoformat(),
-                'items': [{'user_name': item.user_name, 'item_name': item.item_name} for item in o.order_items]
+                'status': o.status,
+                'items': [{'user_name': item.user_name, 'item_name': item.item_name, 'id': item.id} for item in o.order_items]
             })
         return jsonify(result)
 
-    @app.route('/api/orders', methods=['POST'])
-    def place_order():
-        data = request.get_json()
-        new_order = Order(restaurant_id=data['restaurant_id'], orderer_name=data['orderer_name'])
-        db.session.add(new_order)
-        db.session.commit()
-
-        for item in data['items']:
-            order_item = OrderItem(order_id=new_order.id, user_name=item['user_name'], item_name=item['item_name'])
-            db.session.add(order_item)
+    @app.route('/api/restaurants/<int:restaurant_id>/open-order', methods=['GET'])
+    def get_or_create_open_order(restaurant_id):
+        open_order = Order.query.filter_by(restaurant_id=restaurant_id, status='open').first()
+        if not open_order:
+            # Create a placeholder open order if none exists
+            open_order = Order(restaurant_id=restaurant_id, orderer_name='Undecided', status='open')
+            db.session.add(open_order)
+            db.session.commit()
         
+        return jsonify({
+            'id': open_order.id,
+            'restaurant_id': open_order.restaurant_id,
+            'orderer_name': open_order.orderer_name,
+            'created_at': open_order.created_at.isoformat(),
+            'status': open_order.status,
+            'items': [{'user_name': item.user_name, 'item_name': item.item_name, 'id': item.id} for item in open_order.order_items]
+        })
+
+    @app.route('/api/orders/<int:order_id>/items', methods=['POST'])
+    def add_item_to_open_order(order_id):
+        order = Order.query.get_or_404(order_id)
+        if order.status == 'locked':
+            return jsonify({'error': 'Order is locked and cannot be modified.'}), 403
+
+        data = request.get_json()
+        new_item = OrderItem(order_id=order_id, user_name=data['user_name'], item_name=data['item_name'])
+        db.session.add(new_item)
         db.session.commit()
-        return jsonify({'id': new_order.id})
+        return jsonify({'id': new_item.id, 'user_name': new_item.user_name, 'item_name': new_item.item_name})
+
+    @app.route('/api/order-items/<int:item_id>', methods=['PUT'])
+    def update_order_item(item_id):
+        order_item = OrderItem.query.get_or_404(item_id)
+        if order_item.order.status == 'locked':
+            return jsonify({'error': 'Order is locked and cannot be modified.'}), 403
+
+        data = request.get_json()
+        order_item.user_name = data.get('user_name', order_item.user_name)
+        order_item.item_name = data.get('item_name', order_item.item_name)
+        db.session.commit()
+        return jsonify({'id': order_item.id, 'user_name': order_item.user_name, 'item_name': order_item.item_name})
+
+    @app.route('/api/order-items/<int:item_id>', methods=['DELETE'])
+    def delete_order_item(item_id):
+        order_item = OrderItem.query.get_or_404(item_id)
+        if order_item.order.status == 'locked':
+            return jsonify({'error': 'Order is locked and cannot be modified.'}), 403
+
+        db.session.delete(order_item)
+        db.session.commit()
+        return '', 204
+
+    @app.route('/api/orders/<int:order_id>/lock', methods=['POST'])
+    def lock_order(order_id):
+        order = Order.query.get_or_404(order_id)
+        order.status = 'locked'
+        db.session.commit()
+        return jsonify({'id': order.id, 'status': order.status})
+
+    @app.route('/api/orders/<int:order_id>/orderer', methods=['PUT'])
+    def update_orderer(order_id):
+        order = Order.query.get_or_404(order_id)
+        if order.status == 'locked':
+            return jsonify({'error': 'Order is locked and orderer cannot be changed.'}), 403
+        
+        data = request.get_json()
+        new_orderer_name = data.get('orderer_name')
+        if new_orderer_name:
+            order.orderer_name = new_orderer_name
+            db.session.commit()
+            return jsonify({'id': order.id, 'orderer_name': order.orderer_name})
+        return jsonify({'error': 'Orderer name not provided.'}), 400
