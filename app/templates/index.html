@@ -130,9 +130,35 @@
         const placeOrderForm = document.getElementById('place-order-form');
 
         const orderHistory = document.getElementById('order-history');
+        const darkModeToggle = document.getElementById('dark-mode-toggle'); // Added for dark mode
 
         let selectedRestaurantId = null;
         let currentOpenOrder = null;
+
+        // Dark Mode Logic
+        const enableDarkMode = () => {
+            document.body.classList.add('dark-mode');
+            localStorage.setItem('dark-mode', 'enabled');
+        };
+
+        const disableDarkMode = () => {
+            document.body.classList.remove('dark-mode');
+            localStorage.setItem('dark-mode', 'disabled');
+        };
+
+        // Check for saved dark mode preference on load
+        if (localStorage.getItem('dark-mode') === 'enabled') {
+            enableDarkMode();
+        }
+
+        // Toggle dark mode on button click
+        darkModeToggle.addEventListener('click', () => {
+            if (document.body.classList.contains('dark-mode')) {
+                disableDarkMode();
+            } else {
+                enableDarkMode();
+            }
+        });
 
         // Fetch and display restaurants
         const fetchRestaurants = async () => {
@@ -358,8 +384,8 @@
 
         // Edit an item in the current open order
         const editOrderItem = async (item) => {
-            const newUserName = prompt('Enter new name for item:', item.user_name);
-            const newItemName = prompt('Enter new item name:', item.item_name);
+            const newUserName = prompt("Enter new name for item:", item.user_name);
+            const newItemName = prompt("Enter new item name:", item.item_name);
 
             if (newUserName !== null && newItemName !== null) {
                 await fetch(`${apiUrl}/order-items/${item.id}`, {
