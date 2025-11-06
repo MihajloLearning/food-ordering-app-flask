@@ -50,6 +50,15 @@ def register_routes(app):
         db.session.commit()
         return jsonify({'id': new_item.id, 'name': new_item.name, 'price': str(new_item.price)})
 
+    @app.route('/api/menu/<int:id>', methods=['PUT'])
+    def update_menu_item(id):
+        item = MenuItem.query.get_or_404(id)
+        data = request.get_json()
+        item.name = data.get('name', item.name)
+        item.price = data.get('price', item.price)
+        db.session.commit()
+        return jsonify({'id': item.id, 'name': item.name, 'price': str(item.price)})
+
     @app.route('/api/menu/<int:id>', methods=['DELETE'])
     def delete_menu_item(id):
         item = MenuItem.query.get(id)

@@ -263,12 +263,32 @@
             menuItems.forEach(item => {
                 const li = document.createElement('li');
                 li.textContent = `${item.name} - ${item.price}.ден`;
+
+                const editButton = document.createElement('button');
+                editButton.textContent = 'Edit';
+                editButton.onclick = () => editMenuItem(item);
+                li.appendChild(editButton);
+
                 const deleteButton = document.createElement('button');
                 deleteButton.textContent = 'Delete';
                 deleteButton.onclick = () => deleteMenuItem(item.id);
                 li.appendChild(deleteButton);
                 menuItemList.appendChild(li);
             });
+        };
+
+        // Edit a menu item
+        const editMenuItem = async (item) => {
+            const newName = prompt('Enter new name for menu item:', item.name);
+            const newPrice = prompt('Enter new price for menu item:', item.price);
+            if (newName && newPrice) {
+                await fetch(`${apiUrl}/menu/${item.id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newName, price: newPrice }),
+                });
+                selectRestaurant({ id: selectedRestaurantId, name: menuTitle.textContent.replace(' Menu', '') });
+            }
         };
 
         // Add a new restaurant
@@ -324,12 +344,6 @@
         };
 
         viewOrderButton.onclick = async () => {
-            if (orderUserNameInput.value.trim() === '') {
-                alert('Please enter your name before viewing an order.');
-                orderUserNameInput.focus();
-                return;
-            }
-
             const restaurantId = orderRestaurantSelect.value;
             if (restaurantId) {
                 openOrderDetails.style.display = 'block';
@@ -384,6 +398,7 @@
             }
             if (orderUserNameInput.value.trim() === '') {
                 alert('Please enter your name for the item');
+                orderUserNameInput.focus();
                 return;
             }
 
@@ -482,7 +497,7 @@
                         price: newPrice
                     }),
                 });
-                fetchOpenOrder(currentOpenOrder.restaurant_id);
+                fetchOpenOrder(currentOpenOrder.restaurant_.id);
             }
         };
 
