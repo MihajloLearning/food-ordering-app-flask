@@ -29,3 +29,5 @@ class OrderItem(db.Model):
     order_id = db.Column(db.Integer, db.ForeignKey('orders.id'), nullable=False)
     user_name = db.Column(db.String(255), nullable=False)
     item_name = db.Column(db.String(255), nullable=False)
+    notes = db.Column(db.String(255), nullable=True)
+    price = db.Column(db.Numeric(10, 2), nullable=False)

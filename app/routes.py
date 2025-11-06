@@ -63,14 +63,15 @@ def register_routes(app):
         orders = Order.query.order_by(Order.created_at.desc()).all()
         result = []
         for o in orders:
-            result.append({
-                'id': o.id,
-                'restaurant_name': o.restaurant.name,
-                'orderer_name': o.orderer_name,
-                'created_at': o.created_at.isoformat(),
-                'status': o.status,
-                'items': [{'user_name': item.user_name, 'item_name': item.item_name, 'id': item.id} for item in o.order_items]
-            })
+            if o.status == 'locked' or o.order_items:
+                result.append({
+                    'id': o.id,
+                    'restaurant_name': o.restaurant.name,
+                    'orderer_name': o.orderer_name,
+                    'created_at': o.created_at.isoformat(),
+                    'status': o.status,
+                    'items': [{'user_name': item.user_name, 'item_name': item.item_name, 'id': item.id, 'notes': item.notes, 'price': str(item.price)} for item in o.order_items]
+                })
         return jsonify(result)
 
     @app.route('/api/restaurants/<int:restaurant_id>/open-order', methods=['GET'])
@@ -88,7 +89,7 @@ def register_routes(app):
             'orderer_name': open_order.orderer_name,
             'created_at': open_order.created_at.isoformat(),
             'status': open_order.status,
-            'items': [{'user_name': item.user_name, 'item_name': item.item_name, 'id': item.id} for item in open_order.order_items]
+            'items': [{'user_name': item.user_name, 'item_name': item.item_name, 'id': item.id, 'notes': item.notes, 'price': str(item.price)} for item in open_order.order_items]
         })
 
     @app.route('/api/orders/<int:order_id>/items', methods=['POST'])
@@ -98,10 +99,10 @@ def register_routes(app):
             return jsonify({'error': 'Order is locked and cannot be modified.'}), 403
 
         data = request.get_json()
-        new_item = OrderItem(order_id=order_id, user_name=data['user_name'], item_name=data['item_name'])
+        new_item = OrderItem(order_id=order_id, user_name=data['user_name'], item_name=data['item_name'], notes=data.get('notes'), price=data['price'])
         db.session.add(new_item)
         db.session.commit()
-        return jsonify({'id': new_item.id, 'user_name': new_item.user_name, 'item_name': new_item.item_name})
+        return jsonify({'id': new_item.id, 'user_name': new_item.user_name, 'item_name': new_item.item_name, 'notes': new_item.notes, 'price': str(new_item.price)})
 
     @app.route('/api/order-items/<int:item_id>', methods=['PUT'])
     def update_order_item(item_id):
@@ -112,8 +113,10 @@ def register_routes(app):
         data = request.get_json()
         order_item.user_name = data.get('user_name', order_item.user_name)
         order_item.item_name = data.get('item_name', order_item.item_name)
+        order_item.notes = data.get('notes', order_item.notes)
+        order_item.price = data.get('price', order_item.price)
         db.session.commit()
-        return jsonify({'id': order_item.id, 'user_name': order_item.user_name, 'item_name': order_item.item_name})
+        return jsonify({'id': order_item.id, 'user_name': order_item.user_name, 'item_name': order_item.item_name, 'notes': order_item.notes, 'price': str(order_item.price)})
 
     @app.route('/api/order-items/<int:item_id>', methods=['DELETE'])
     def delete_order_item(item_id):

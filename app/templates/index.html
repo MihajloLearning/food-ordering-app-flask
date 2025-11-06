@@ -34,7 +34,7 @@
         .container { display: flex; justify-content: space-around; flex-wrap: wrap; gap: 20px; }
         .col { background-color: var(--card-bg-color); padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); flex: 1; min-width: 300px; }
         form { margin-bottom: 20px; padding: 15px; border: 1px solid var(--border-color); border-radius: 5px; background-color: var(--form-bg-color); }
-        input[type="text"], input[type="number"], select { width: calc(100% - 22px); padding: 10px; margin: 8px 0; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--list-item-bg-color); color: var(--text-color); }
+        input[type="text"], input[type="number"], input[type="date"], select { width: calc(100% - 22px); padding: 10px; margin: 8px 0; border: 1px solid var(--border-color); border-radius: 4px; background-color: var(--list-item-bg-color); color: var(--text-color); }
         button { background-color: #4CAF50; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-top: 10px; }
         button:hover { background-color: #45a049; }
         button:disabled { background-color: #cccccc; cursor: not-allowed; }
@@ -44,7 +44,6 @@
         #restaurant-list li { cursor: pointer; }
         #restaurant-list li:hover { background-color: #e9e9e9; }
         .restaurant-order-group { border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; margin-bottom: 20px; background-color: var(--form-bg-color); }
-        .restaurant-order-group h2 { border-bottom: 1px solid var(--border-color); padding-bottom: 8px; margin-top: 0; color: var(--subheader-color); }
         .order-item-card { border: 1px solid var(--border-color); border-radius: 5px; padding: 10px; margin-top: 10px; background-color: var(--card-bg-color); }
         .locked-order { opacity: 0.7; pointer-events: none; }
         .dark-mode-toggle { position: absolute; top: 20px; right: 20px; padding: 10px 15px; background-color: #34495e; color: white; border: none; border-radius: 5px; cursor: pointer; }
@@ -82,6 +81,7 @@
                 <div>
                     <label>Restaurant:</label>
                     <select id="order-restaurant-select" required></select>
+                    <button type="button" id="view-order-button" style="margin-left: 10px;" disabled>View/Join Order</button>
                 </div>
                 <div id="open-order-details" style="display:none;">
                     <p><strong>Current Orderer:</strong> <span id="current-orderer-name"></span>
@@ -89,6 +89,8 @@
                     </p>
                     <label>Your Name (for item):</label>
                     <input type="text" id="order-user-name" placeholder="Your name for item">
+                    <label>Notes (optional):</label>
+                    <input type="text" id="order-item-notes" placeholder="Special requests, allergies, etc.">
                     <h3>Menu</h3>
                     <ul id="order-menu-list"></ul>
                     <h3>Items in this Order</h3>
@@ -101,6 +103,12 @@
         <div class="col">
             <!-- Order History -->
             <h2>Order History</h2>
+            <form id="filter-history-form">
+                <label for="history-date-filter">Filter by date:</label>
+                <input type="date" id="history-date-filter">
+                <button type="button" id="filter-history-button">Filter</button>
+                <button type="button" id="clear-filter-history-button">Clear</button>
+            </form>
             <div id="order-history"></div>
         </div>
     </div>
@@ -120,20 +128,35 @@
         const newItemPriceInput = document.getElementById('new-item-price');
 
         const orderRestaurantSelect = document.getElementById('order-restaurant-select');
+        const viewOrderButton = document.getElementById('view-order-button');
         const openOrderDetails = document.getElementById('open-order-details');
         const currentOrdererNameSpan = document.getElementById('current-orderer-name');
         const editOrdererButton = document.getElementById('edit-orderer-button');
         const orderUserNameInput = document.getElementById('order-user-name');
+        const orderItemNotesInput = document.getElementById('order-item-notes');
         const orderMenuList = document.getElementById('order-menu-list');
         const currentOrderItemsList = document.getElementById('current-order-items-list');
         const lockOrderButton = document.getElementById('lock-order-button');
         const placeOrderForm = document.getElementById('place-order-form');
 
         const orderHistory = document.getElementById('order-history');
+        const historyDateFilter = document.getElementById('history-date-filter');
+        const filterHistoryButton = document.getElementById('filter-history-button');
+        const clearFilterHistoryButton = document.getElementById('clear-filter-history-button');
         const darkModeToggle = document.getElementById('dark-mode-toggle'); // Added for dark mode
 
         let selectedRestaurantId = null;
         let currentOpenOrder = null;
+        let allOrders = []; // Cache for all orders
+
+        // Load and save user name for ordering
+        const savedUserName = localStorage.getItem('orderUserName');
+        if (savedUserName) {
+            orderUserNameInput.value = savedUserName;
+        }
+        orderUserNameInput.addEventListener('input', () => {
+            localStorage.setItem('orderUserName', orderUserNameInput.value);
+        });
 
         // Dark Mode Logic
         const enableDarkMode = () => {
@@ -239,7 +262,7 @@
             menuItemList.innerHTML = '';
             menuItems.forEach(item => {
                 const li = document.createElement('li');
-                li.textContent = `${item.name} - $${item.price}`;
+                li.textContent = `${item.name} - ${item.price}.ден`;
                 const deleteButton = document.createElement('button');
                 deleteButton.textContent = 'Delete';
                 deleteButton.onclick = () => deleteMenuItem(item.id);
@@ -289,7 +312,24 @@
         };
 
         // Handle restaurant selection for ordering
-        orderRestaurantSelect.onchange = async () => {
+        orderRestaurantSelect.onchange = () => {
+            const restaurantId = orderRestaurantSelect.value;
+            openOrderDetails.style.display = 'none'; // Always hide on change
+            currentOpenOrder = null;
+            if (restaurantId) {
+                viewOrderButton.disabled = false;
+            } else {
+                viewOrderButton.disabled = true;
+            }
+        };
+
+        viewOrderButton.onclick = async () => {
+            if (orderUserNameInput.value.trim() === '') {
+                alert('Please enter your name before viewing an order.');
+                orderUserNameInput.focus();
+                return;
+            }
+
             const restaurantId = orderRestaurantSelect.value;
             if (restaurantId) {
                 openOrderDetails.style.display = 'block';
@@ -299,7 +339,7 @@
                 orderMenuList.innerHTML = '';
                 menuItems.forEach(item => {
                     const li = document.createElement('li');
-                    li.textContent = `${item.name} - $${item.price}`;
+                    li.textContent = `${item.name} - ${item.price}.ден`;
                     const addButton = document.createElement('button');
                     addButton.textContent = 'Add to Order';
                     addButton.type = 'button';
@@ -307,9 +347,6 @@
                     li.appendChild(addButton);
                     orderMenuList.appendChild(li);
                 });
-            } else {
-                openOrderDetails.style.display = 'none';
-                currentOpenOrder = null;
             }
         };
 
@@ -353,8 +390,14 @@
             await fetch(`${apiUrl}/orders/${currentOpenOrder.id}/items`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_name: orderUserNameInput.value, item_name: item.name }),
+                body: JSON.stringify({ 
+                    user_name: orderUserNameInput.value, 
+                    item_name: item.name, 
+                    notes: orderItemNotesInput.value,
+                    price: item.price
+                }),
             });
+            orderItemNotesInput.value = ''; // Clear notes after adding
             fetchOpenOrder(currentOpenOrder.restaurant_id);
         };
 
@@ -362,23 +405,62 @@
         const renderCurrentOrderItems = () => {
             currentOrderItemsList.innerHTML = '';
             if (currentOpenOrder && currentOpenOrder.items) {
+                const itemsByUser = {};
                 currentOpenOrder.items.forEach(item => {
-                    const li = document.createElement('li');
-                    li.textContent = `${item.user_name}: ${item.item_name}`;
-
-                    if (currentOpenOrder.status === 'open') {
-                        const editButton = document.createElement('button');
-                        editButton.textContent = 'Edit';
-                        editButton.onclick = () => editOrderItem(item);
-                        li.appendChild(editButton);
-
-                        const deleteButton = document.createElement('button');
-                        deleteButton.textContent = 'Delete';
-                        deleteButton.onclick = () => deleteOrderItem(item.id);
-                        li.appendChild(deleteButton);
+                    if (!itemsByUser[item.user_name]) {
+                        itemsByUser[item.user_name] = [];
                     }
-                    currentOrderItemsList.appendChild(li);
+                    itemsByUser[item.user_name].push(item);
                 });
+
+                for (const userName in itemsByUser) {
+                    const userLi = document.createElement('li');
+                    userLi.style.display = 'block'; // To allow nesting
+                    userLi.style.background = 'transparent';
+                    userLi.style.border = 'none';
+                    userLi.style.padding = '5px 0';
+
+                    let userTotal = 0;
+                    const userItemsUl = document.createElement('ul');
+                    userItemsUl.style.paddingLeft = '10px';
+                    userItemsUl.style.marginTop = '5px';
+
+                    itemsByUser[userName].forEach(item => {
+                        userTotal += parseFloat(item.price);
+                        const itemLi = document.createElement('li'); // This will have the default li styling
+                        
+                        let itemText = `${item.item_name} - ${item.price}.ден`;
+                        if (item.notes) {
+                            itemText += ` (${item.notes})`;
+                        }
+                        const textSpan = document.createElement('span');
+                        textSpan.textContent = itemText;
+                        
+                        const controlsDiv = document.createElement('div');
+
+                        if (currentOpenOrder.status === 'open') {
+                            const editButton = document.createElement('button');
+                            editButton.textContent = 'Edit';
+                            editButton.onclick = () => editOrderItem(item);
+                            controlsDiv.appendChild(editButton);
+
+                            const deleteButton = document.createElement('button');
+                            deleteButton.textContent = 'Delete';
+                            deleteButton.onclick = () => deleteOrderItem(item.id);
+                            controlsDiv.appendChild(deleteButton);
+                        }
+                        
+                        itemLi.appendChild(textSpan);
+                        itemLi.appendChild(controlsDiv);
+                        userItemsUl.appendChild(itemLi);
+                    });
+
+                    const userHeader = document.createElement('strong');
+                    userHeader.textContent = `${userName} - Total: ${userTotal.toFixed(2)}.ден`;
+                    userLi.appendChild(userHeader);
+                    userLi.appendChild(userItemsUl);
+                    currentOrderItemsList.appendChild(userLi);
+                }
             }
         };
 
@@ -386,12 +468,19 @@
         const editOrderItem = async (item) => {
             const newUserName = prompt("Enter new name for item:", item.user_name);
             const newItemName = prompt("Enter new item name:", item.item_name);
+            const newNotes = prompt("Enter new notes:", item.notes || '');
+            const newPrice = prompt("Enter new price:", item.price);
 
             if (newUserName !== null && newItemName !== null) {
                 await fetch(`${apiUrl}/order-items/${item.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ user_name: newUserName, item_name: newItemName }),
+                    body: JSON.stringify({ 
+                        user_name: newUserName, 
+                        item_name: newItemName, 
+                        notes: newNotes,
+                        price: newPrice
+                    }),
                 });
                 fetchOpenOrder(currentOpenOrder.restaurant_id);
             }
@@ -423,6 +512,7 @@
             lockOrderButton.disabled = isLocked;
             editOrdererButton.disabled = isLocked;
             orderUserNameInput.disabled = isLocked;
+            orderItemNotesInput.disabled = isLocked;
             orderMenuList.querySelectorAll('button').forEach(button => button.disabled = isLocked);
             if (isLocked) {
                 openOrderDetails.classList.add('locked-order');
@@ -434,11 +524,23 @@
         // Fetch and display order history
         const fetchOrderHistory = async () => {
             const response = await fetch(`${apiUrl}/orders`);
-            const orders = await response.json();
+            allOrders = await response.json();
+            renderOrderHistory();
+        };
+
+        const renderOrderHistory = (filterDate = null) => {
             orderHistory.innerHTML = '';
 
+            let ordersToRender = allOrders;
+            if (filterDate) {
+                ordersToRender = allOrders.filter(order => {
+                    const orderDate = new Date(order.created_at).toISOString().split('T')[0];
+                    return orderDate === filterDate;
+                });
+            }
+
             const groupedOrders = {};
-            orders.forEach(order => {
+            ordersToRender.forEach(order => {
                 if (!groupedOrders[order.restaurant_name]) {
                     groupedOrders[order.restaurant_name] = [];
                 }
@@ -456,18 +558,56 @@
                     if (order.status === 'locked') {
                         orderDiv.classList.add('locked-order');
                     }
+
+                    const itemsByUser = {};
+                    order.items.forEach(item => {
+                        if (!itemsByUser[item.user_name]) {
+                            itemsByUser[item.user_name] = [];
+                        }
+                        itemsByUser[item.user_name].push(item);
+                    });
+
+                    let itemsHtml = '<ul>';
+                    for (const userName in itemsByUser) {
+                        let userTotal = 0;
+                        itemsHtml += '<li style="display: block; border: none; background: transparent; padding: 5px 0;">';
+                        
+                        const userItemsUl = document.createElement('ul');
+                        userItemsUl.style.paddingLeft = '10px';
+                        userItemsUl.style.marginTop = '5px';
+
+                        let userItemsHtml = '';
+                        itemsByUser[userName].forEach(item => {
+                            userTotal += parseFloat(item.price);
+                            userItemsHtml += `<li>${item.item_name} - ${item.price}.ден${item.notes ? ` (${item.notes})` : ''}</li>`;
+                        });
+
+                        itemsHtml += `<strong>${userName} - Total: ${userTotal.toFixed(2)}.ден</strong>`;
+                        itemsHtml += userItemsHtml;
+                        itemsHtml += '</ul></li>';
+                    }
+                    itemsHtml += '</ul>';
+
                     orderDiv.innerHTML = `
                         <p><strong>Orderer:</strong> ${order.orderer_name}</p>
                         <p><strong>Status:</strong> ${order.status}</p>
                         <p><strong>Date:</strong> ${new Date(order.created_at).toLocaleString()}</p>
-                        <ul>
-                            ${order.items.map(item => `<li>${item.user_name}: ${item.item_name}</li>`).join('')}
-                        </ul>
+                        ${itemsHtml}
                     `;
                     restaurantDiv.appendChild(orderDiv);
                 });
                 orderHistory.appendChild(restaurantDiv);
             }
+        };
+
+        filterHistoryButton.onclick = () => {
+            const filterDate = historyDateFilter.value;
+            renderOrderHistory(filterDate);
+        };
+
+        clearFilterHistoryButton.onclick = () => {
+            historyDateFilter.value = '';
+            renderOrderHistory();
         };
 
         // Initial data load

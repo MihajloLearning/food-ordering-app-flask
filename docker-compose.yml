@@ -11,7 +11,7 @@ services:
       - FLASK_RUN_HOST=0.0.0.0
     depends_on:
       - db
-    restart: on-failure
+    restart: always
     networks:
       - food_app
   db:
@@ -22,11 +22,14 @@ services:
       - POSTGRES_DB=${DB_NAME}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      - 5434:5432
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: always
     networks:
       - food_app
 volumes:
