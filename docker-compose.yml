@@ -1,4 +1,3 @@
-version: '3.8'
 services:
   web:
     build: .
@@ -13,6 +12,8 @@ services:
     depends_on:
       - db
     restart: on-failure
+    networks:
+      - food_app
   db:
     image: postgres:13
     environment:
@@ -26,5 +27,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - food_app
 volumes:
   pgdata:
+
+networks:
+  food_app:
+    driver: bridge
