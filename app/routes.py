@@ -148,3 +148,12 @@ def register_routes(app):
             db.session.commit()
             return jsonify({'id': order.id, 'orderer_name': order.orderer_name})
         return jsonify({'error': 'Orderer name not provided.'}), 400
+
+    @app.route('/api/orders/<int:order_id>', methods=['DELETE'])
+    def cancel_order(order_id):
+        order = Order.query.get_or_404(order_id)
+        if order.status == 'locked':
+            return jsonify({'error': 'Cannot cancel a locked order.'}), 403
+        db.session.delete(order)
+        db.session.commit()
+        return '', 204

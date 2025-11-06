@@ -588,15 +588,44 @@
                     }
                     itemsHtml += '</ul>';
 
+                    let orderControls = '';
+                    if (order.status !== 'locked') {
+                        orderControls = `<button class="cancel-order-btn" data-order-id="${order.id}">Cancel Order</button>`;
+                    }
+
                     orderDiv.innerHTML = `
                         <p><strong>Orderer:</strong> ${order.orderer_name}</p>
                         <p><strong>Status:</strong> ${order.status}</p>
                         <p><strong>Date:</strong> ${new Date(order.created_at).toLocaleString()}</p>
                         ${itemsHtml}
+                        ${orderControls}
                     `;
                     restaurantDiv.appendChild(orderDiv);
                 });
                 orderHistory.appendChild(restaurantDiv);
+            }
+        };
+
+        orderHistory.addEventListener('click', async (e) => {
+            if (e.target.classList.contains('cancel-order-btn')) {
+                const orderId = e.target.dataset.orderId;
+                if (confirm('Are you sure you want to cancel this order?')) {
+                    await cancelOrder(orderId);
+                }
+            }
+        });
+
+        const cancelOrder = async (orderId) => {
+            const response = await fetch(`${apiUrl}/orders/${orderId}`, { method: 'DELETE' });
+            if (response.ok) {
+                fetchOrderHistory();
+                if (currentOpenOrder && currentOpenOrder.id == orderId) {
+                    openOrderDetails.style.display = 'none';
+                    currentOpenOrder = null;
+                }
+            } else {
+                const error = await response.json();
+                alert(`Error: ${error.error}`);
             }
         };
 
