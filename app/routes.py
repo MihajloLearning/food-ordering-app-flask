@@ -1,6 +1,7 @@
 from flask import request, jsonify, render_template
 from app import db
 from app.models import Restaurant, MenuItem, Order, OrderItem
+from datetime import datetime, timedelta, timezone
 
 def register_routes(app):
     @app.route('/')
@@ -79,6 +80,7 @@ def register_routes(app):
                     'orderer_name': o.orderer_name,
                     'created_at': o.created_at.isoformat(),
                     'status': o.status,
+                    'auto_lock_at': o.auto_lock_at.isoformat() if o.auto_lock_at else None,
                     'items': [{'user_name': item.user_name, 'item_name': item.item_name, 'id': item.id, 'notes': item.notes, 'price': str(item.price)} for item in o.order_items]
                 })
         return jsonify(result)
@@ -86,11 +88,13 @@ def register_routes(app):
     @app.route('/api/restaurants/<int:restaurant_id>/open-order', methods=['GET'])
     def get_or_create_open_order(restaurant_id):
         open_order = Order.query.filter_by(restaurant_id=restaurant_id, status='open').first()
-        if not open_order:
-            # Create a placeholder open order if none exists
-            open_order = Order(restaurant_id=restaurant_id, orderer_name='Undecided', status='open')
-            db.session.add(open_order)
+        if open_order and open_order.auto_lock_at and open_order.auto_lock_at < datetime.now(timezone.utc):
+            open_order.status = 'locked'
             db.session.commit()
+            open_order = None
+
+        if not open_order:
+            return jsonify({'message': 'No open order available.'}), 404
         
         return jsonify({
             'id': open_order.id,
@@ -98,7 +102,41 @@ def register_routes(app):
             'orderer_name': open_order.orderer_name,
             'created_at': open_order.created_at.isoformat(),
             'status': open_order.status,
+            'auto_lock_at': open_order.auto_lock_at.isoformat() if open_order.auto_lock_at else None,
             'items': [{'user_name': item.user_name, 'item_name': item.item_name, 'id': item.id, 'notes': item.notes, 'price': str(item.price)} for item in open_order.order_items]
+        })
+
+    @app.route('/api/orders/start', methods=['POST'])
+    def start_order():
+        data = request.get_json()
+        restaurant_id = data.get('restaurant_id')
+        orderer_name = data.get('orderer_name')
+        duration = data.get('duration')
+
+        if not all([restaurant_id, orderer_name, duration]):
+            return jsonify({'error': 'Missing required fields.'}), 400
+
+        existing_open_order = Order.query.filter_by(restaurant_id=restaurant_id, status='open').first()
+        if existing_open_order:
+            return jsonify({'error': 'An order is already open for this restaurant.'}), 409
+
+        auto_lock_at = datetime.now(timezone.utc) + timedelta(minutes=int(duration))
+        new_order = Order(
+            restaurant_id=restaurant_id,
+            orderer_name=orderer_name,
+            auto_lock_at=auto_lock_at
+        )
+        db.session.add(new_order)
+        db.session.commit()
+
+        return jsonify({
+            'id': new_order.id,
+            'restaurant_id': new_order.restaurant_id,
+            'orderer_name': new_order.orderer_name,
+            'created_at': new_order.created_at.isoformat(),
+            'status': new_order.status,
+            'auto_lock_at': new_order.auto_lock_at.isoformat(),
+            'items': []
         })
 
     @app.route('/api/orders/<int:order_id>/items', methods=['POST'])
@@ -136,13 +174,6 @@ def register_routes(app):
         db.session.delete(order_item)
         db.session.commit()
         return '', 204
-
-    @app.route('/api/orders/<int:order_id>/lock', methods=['POST'])
-    def lock_order(order_id):
-        order = Order.query.get_or_404(order_id)
-        order.status = 'locked'
-        db.session.commit()
-        return jsonify({'id': order.id, 'status': order.status})
 
     @app.route('/api/orders/<int:order_id>/orderer', methods=['PUT'])
     def update_orderer(order_id):

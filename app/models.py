@@ -1,4 +1,5 @@
 from app import db
+from datetime import datetime
 
 class Restaurant(db.Model):
     __tablename__ = 'restaurants'
@@ -19,8 +20,9 @@ class Order(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     restaurant_id = db.Column(db.Integer, db.ForeignKey('restaurants.id'), nullable=False)
     orderer_name = db.Column(db.String(255), nullable=False)
-    created_at = db.Column(db.DateTime, server_default=db.func.now())
+    created_at = db.Column(db.DateTime(timezone=True), server_default=db.func.now())
     status = db.Column(db.String(50), default='open', nullable=False)
+    auto_lock_at = db.Column(db.DateTime(timezone=True), nullable=True)
     order_items = db.relationship('OrderItem', backref='order', lazy=True, cascade="all, delete-orphan")
 
 class OrderItem(db.Model):

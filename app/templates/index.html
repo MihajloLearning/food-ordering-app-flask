@@ -83,7 +83,15 @@
                     <select id="order-restaurant-select" required></select>
                     <button type="button" id="view-order-button" style="margin-left: 10px;" disabled>View/Join Order</button>
                 </div>
+                <div id="start-order-section" style="display:none;">
+                    <label>Your Name:</label>
+                    <input type="text" id="start-order-name" placeholder="Your name to start the order">
+                    <label>Order Duration (minutes):</label>
+                    <input type="number" id="order-duration" value="15" min="1">
+                    <button type="button" id="start-order-button">Start New Order</button>
+                </div>
                 <div id="open-order-details" style="display:none;">
+                    <p><strong>Order ends in: <span id="countdown-timer"></span></strong></p>
                     <p><strong>Current Orderer:</strong> <span id="current-orderer-name"></span>
                         <button type="button" id="edit-orderer-button" style="margin-left: 10px; padding: 5px 10px; font-size: 14px;">Edit</button>
                     </p>
@@ -95,7 +103,6 @@
                     <ul id="order-menu-list"></ul>
                     <h3>Items in this Order</h3>
                     <ul id="current-order-items-list"></ul>
-                    <button type="button" id="lock-order-button" style="background-color: #e74c3c;">Lock Order</button>
                 </div>
                 <button type="submit" style="display:none;">Place Order</button> <!-- This button is now for adding items to open order -->
             </form>
@@ -129,33 +136,42 @@
 
         const orderRestaurantSelect = document.getElementById('order-restaurant-select');
         const viewOrderButton = document.getElementById('view-order-button');
+        const startOrderSection = document.getElementById('start-order-section');
+        const startOrderNameInput = document.getElementById('start-order-name');
+        const orderDurationInput = document.getElementById('order-duration');
+        const startOrderButton = document.getElementById('start-order-button');
         const openOrderDetails = document.getElementById('open-order-details');
+        const countdownTimerSpan = document.getElementById('countdown-timer');
         const currentOrdererNameSpan = document.getElementById('current-orderer-name');
         const editOrdererButton = document.getElementById('edit-orderer-button');
         const orderUserNameInput = document.getElementById('order-user-name');
         const orderItemNotesInput = document.getElementById('order-item-notes');
         const orderMenuList = document.getElementById('order-menu-list');
         const currentOrderItemsList = document.getElementById('current-order-items-list');
-        const lockOrderButton = document.getElementById('lock-order-button');
         const placeOrderForm = document.getElementById('place-order-form');
 
         const orderHistory = document.getElementById('order-history');
         const historyDateFilter = document.getElementById('history-date-filter');
         const filterHistoryButton = document.getElementById('filter-history-button');
         const clearFilterHistoryButton = document.getElementById('clear-filter-history-button');
-        const darkModeToggle = document.getElementById('dark-mode-toggle'); // Added for dark mode
+        const darkModeToggle = document.getElementById('dark-mode-toggle');
 
         let selectedRestaurantId = null;
         let currentOpenOrder = null;
-        let allOrders = []; // Cache for all orders
+        let allOrders = [];
+        let countdownInterval = null;
 
         // Load and save user name for ordering
         const savedUserName = localStorage.getItem('orderUserName');
         if (savedUserName) {
             orderUserNameInput.value = savedUserName;
+            startOrderNameInput.value = savedUserName;
         }
         orderUserNameInput.addEventListener('input', () => {
             localStorage.setItem('orderUserName', orderUserNameInput.value);
+        });
+        startOrderNameInput.addEventListener('input', () => {
+            localStorage.setItem('orderUserName', startOrderNameInput.value);
         });
 
         // Dark Mode Logic
@@ -169,12 +185,10 @@
             localStorage.setItem('dark-mode', 'disabled');
         };
 
-        // Check for saved dark mode preference on load
         if (localStorage.getItem('dark-mode') === 'enabled') {
             enableDarkMode();
         }
 
-        // Toggle dark mode on button click
         darkModeToggle.addEventListener('click', () => {
             if (document.body.classList.contains('dark-mode')) {
                 disableDarkMode();
@@ -185,10 +199,8 @@
 
         // Fetch and display restaurants
         const fetchRestaurants = async () => {
-            console.log('Fetching restaurants...');
             const response = await fetch(`${apiUrl}/restaurants`);
             const restaurants = await response.json();
-            console.log('Fetched restaurants:', restaurants);
             restaurantList.innerHTML = '';
             orderRestaurantSelect.innerHTML = '<option value="">Select a restaurant</option>';
             restaurants.forEach(r => {
@@ -244,6 +256,7 @@
                     newItemNameInput.disabled = true;
                     newItemPriceInput.disabled = true;
                     openOrderDetails.style.display = 'none';
+                    startOrderSection.style.display = 'none';
                     currentOpenOrder = null;
                 }
             }
@@ -294,14 +307,11 @@
         // Add a new restaurant
         addRestaurantForm.onsubmit = async (e) => {
             e.preventDefault();
-            console.log('Adding restaurant:', newRestaurantNameInput.value);
             const response = await fetch(`${apiUrl}/restaurants`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: newRestaurantNameInput.value }),
             });
-            const data = await response.json();
-            console.log('Add restaurant response:', data);
             newRestaurantNameInput.value = '';
             fetchRestaurants();
         };
@@ -334,7 +344,8 @@
         // Handle restaurant selection for ordering
         orderRestaurantSelect.onchange = () => {
             const restaurantId = orderRestaurantSelect.value;
-            openOrderDetails.style.display = 'none'; // Always hide on change
+            openOrderDetails.style.display = 'none';
+            startOrderSection.style.display = 'none';
             currentOpenOrder = null;
             if (restaurantId) {
                 viewOrderButton.disabled = false;
@@ -346,31 +357,70 @@
         viewOrderButton.onclick = async () => {
             const restaurantId = orderRestaurantSelect.value;
             if (restaurantId) {
-                openOrderDetails.style.display = 'block';
                 await fetchOpenOrder(restaurantId);
-                const response = await fetch(`${apiUrl}/restaurants/${restaurantId}/menu`);
-                const menuItems = await response.json();
-                orderMenuList.innerHTML = '';
-                menuItems.forEach(item => {
-                    const li = document.createElement('li');
-                    li.textContent = `${item.name} - ${item.price}.ден`;
-                    const addButton = document.createElement('button');
-                    addButton.textContent = 'Add to Order';
-                    addButton.type = 'button';
-                    addButton.onclick = () => addItemToOpenOrder(item);
-                    li.appendChild(addButton);
-                    orderMenuList.appendChild(li);
-                });
             }
         };
 
         // Fetch or create an open order for the selected restaurant
         const fetchOpenOrder = async (restaurantId) => {
             const response = await fetch(`${apiUrl}/restaurants/${restaurantId}/open-order`);
-            currentOpenOrder = await response.json();
-            currentOrdererNameSpan.textContent = currentOpenOrder.orderer_name;
-            renderCurrentOrderItems();
-            updateOrderLockState();
+            if (response.ok) {
+                currentOpenOrder = await response.json();
+                openOrderDetails.style.display = 'block';
+                startOrderSection.style.display = 'none';
+                currentOrdererNameSpan.textContent = currentOpenOrder.orderer_name;
+                renderCurrentOrderItems();
+                updateOrderLockState();
+                startCountdown(currentOpenOrder.auto_lock_at);
+                loadMenuForOrder(restaurantId);
+            } else {
+                openOrderDetails.style.display = 'none';
+                startOrderSection.style.display = 'block';
+            }
+        };
+
+        startOrderButton.onclick = async () => {
+            const restaurantId = orderRestaurantSelect.value;
+            const ordererName = startOrderNameInput.value;
+            const duration = orderDurationInput.value;
+
+            if (!ordererName.trim()) {
+                alert('Please enter your name to start the order.');
+                return;
+            }
+
+            const response = await fetch(`${apiUrl}/orders/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    restaurant_id: restaurantId,
+                    orderer_name: ordererName,
+                    duration: duration,
+                }),
+            });
+
+            if (response.ok) {
+                await fetchOpenOrder(restaurantId);
+            } else {
+                const error = await response.json();
+                alert(`Error: ${error.error}`);
+            }
+        };
+
+        const loadMenuForOrder = async (restaurantId) => {
+            const response = await fetch(`${apiUrl}/restaurants/${restaurantId}/menu`);
+            const menuItems = await response.json();
+            orderMenuList.innerHTML = '';
+            menuItems.forEach(item => {
+                const li = document.createElement('li');
+                li.textContent = `${item.name} - ${item.price}.ден`;
+                const addButton = document.createElement('button');
+                addButton.textContent = 'Add to Order';
+                addButton.type = 'button';
+                addButton.onclick = () => addItemToOpenOrder(item);
+                li.appendChild(addButton);
+                orderMenuList.appendChild(li);
+            });
         };
 
         // Edit the orderer's name
@@ -430,7 +480,7 @@
 
                 for (const userName in itemsByUser) {
                     const userLi = document.createElement('li');
-                    userLi.style.display = 'block'; // To allow nesting
+                    userLi.style.display = 'block';
                     userLi.style.background = 'transparent';
                     userLi.style.border = 'none';
                     userLi.style.padding = '5px 0';
@@ -442,7 +492,7 @@
 
                     itemsByUser[userName].forEach(item => {
                         userTotal += parseFloat(item.price);
-                        const itemLi = document.createElement('li'); // This will have the default li styling
+                        const itemLi = document.createElement('li');
                         
                         let itemText = `${item.item_name} - ${item.price}.ден`;
                         if (item.notes) {
@@ -481,23 +531,20 @@
 
         // Edit an item in the current open order
         const editOrderItem = async (item) => {
-            const newUserName = prompt("Enter new name for item:", item.user_name);
-            const newItemName = prompt("Enter new item name:", item.item_name);
             const newNotes = prompt("Enter new notes:", item.notes || '');
-            const newPrice = prompt("Enter new price:", item.price);
 
-            if (newUserName !== null && newItemName !== null) {
+            if (newNotes !== null) {
                 await fetch(`${apiUrl}/order-items/${item.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
-                        user_name: newUserName, 
-                        item_name: newItemName, 
+                        user_name: item.user_name, 
+                        item_name: item.item_name, 
                         notes: newNotes,
-                        price: newPrice
+                        price: item.price
                     }),
                 });
-                fetchOpenOrder(currentOpenOrder.restaurant_.id);
+                fetchOpenOrder(currentOpenOrder.restaurant_id);
             }
         };
 
@@ -509,38 +556,54 @@
             }
         };
 
-        // Lock the current open order
-        lockOrderButton.onclick = async () => {
-            if (currentOpenOrder && confirm('Are you sure you want to lock this order? No more changes can be made.')) {
-                await fetch(`${apiUrl}/orders/${currentOpenOrder.id}/lock`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                });
-                fetchOpenOrder(currentOpenOrder.restaurant_id);
-                fetchOrderHistory();
-            }
-        };
-
         // Update UI based on order lock state
         const updateOrderLockState = () => {
             const isLocked = currentOpenOrder && currentOpenOrder.status === 'locked';
-            lockOrderButton.disabled = isLocked;
             editOrdererButton.disabled = isLocked;
             orderUserNameInput.disabled = isLocked;
             orderItemNotesInput.disabled = isLocked;
             orderMenuList.querySelectorAll('button').forEach(button => button.disabled = isLocked);
             if (isLocked) {
                 openOrderDetails.classList.add('locked-order');
+                countdownTimerSpan.textContent = 'Locked';
             } else {
                 openOrderDetails.classList.remove('locked-order');
             }
+        };
+
+        const startCountdown = (autoLockAt) => {
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+            }
+            if (!autoLockAt) {
+                countdownTimerSpan.textContent = 'N/A';
+                return;
+            }
+
+            const lockTime = new Date(autoLockAt).getTime();
+            countdownInterval = setInterval(() => {
+                const now = new Date().getTime();
+                const distance = lockTime - now;
+
+                if (distance < 0) {
+                    clearInterval(countdownInterval);
+                    countdownTimerSpan.textContent = "Locked";
+                    fetchOpenOrder(currentOpenOrder.restaurant_id);
+                    fetchOrderHistory();
+                    return;
+                }
+
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                countdownTimerSpan.textContent = `${minutes}m ${seconds}s`;
+            }, 1000);
         };
 
         // Fetch and display order history
         const fetchOrderHistory = async () => {
             const response = await fetch(`${apiUrl}/orders`);
             allOrders = await response.json();
-            renderOrderHistory();
+            renderOrderHistory(historyDateFilter.value);
         };
 
         const renderOrderHistory = (filterDate = null) => {
@@ -575,11 +638,14 @@
                     }
 
                     const itemsByUser = {};
+                    let totalOrderPrice = 0;
+
                     order.items.forEach(item => {
                         if (!itemsByUser[item.user_name]) {
                             itemsByUser[item.user_name] = [];
                         }
                         itemsByUser[item.user_name].push(item);
+                        totalOrderPrice += parseFloat(item.price);
                     });
 
                     let itemsHtml = '<ul>';
@@ -587,19 +653,16 @@
                         let userTotal = 0;
                         itemsHtml += '<li style="display: block; border: none; background: transparent; padding: 5px 0;">';
                         
-                        const userItemsUl = document.createElement('ul');
-                        userItemsUl.style.paddingLeft = '10px';
-                        userItemsUl.style.marginTop = '5px';
-
-                        let userItemsHtml = '';
+                        let userItemsHtml = '<ul>';
                         itemsByUser[userName].forEach(item => {
                             userTotal += parseFloat(item.price);
                             userItemsHtml += `<li>${item.item_name} - ${item.price}.ден${item.notes ? ` (${item.notes})` : ''}</li>`;
                         });
+                        userItemsHtml += '</ul>';
 
                         itemsHtml += `<strong>${userName} - Total: ${userTotal.toFixed(2)}.ден</strong>`;
                         itemsHtml += userItemsHtml;
-                        itemsHtml += '</ul></li>';
+                        itemsHtml += '</li>';
                     }
                     itemsHtml += '</ul>';
 
@@ -608,11 +671,23 @@
                         orderControls = `<button class="cancel-order-btn" data-order-id="${order.id}">Cancel Order</button>`;
                     }
 
+                    let statusText = `<strong>Status:</strong> ${order.status}`;
+                    if (order.status === 'open' && order.auto_lock_at) {
+                        const lockTime = new Date(order.auto_lock_at).getTime();
+                        const now = new Date().getTime();
+                        const distance = lockTime - now;
+                        if (distance > 0) {
+                            const minutes = Math.floor(distance / (1000 * 60));
+                            statusText += ` (Locks in ${minutes} minutes)`;
+                        }
+                    }
+
                     orderDiv.innerHTML = `
                         <p><strong>Orderer:</strong> ${order.orderer_name}</p>
-                        <p><strong>Status:</strong> ${order.status}</p>
+                        <p>${statusText}</p>
                         <p><strong>Date:</strong> ${new Date(order.created_at).toLocaleString()}</p>
                         ${itemsHtml}
+                        <p><strong>Order Total: ${totalOrderPrice.toFixed(2)}.ден</strong></p>
                         ${orderControls}
                     `;
                     restaurantDiv.appendChild(orderDiv);
@@ -653,6 +728,10 @@
             historyDateFilter.value = '';
             renderOrderHistory();
         };
+
+        // Set default date and filter
+        const today = new Date().toISOString().split('T')[0];
+        historyDateFilter.value = today;
 
         // Initial data load
         fetchRestaurants();
