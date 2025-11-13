@@ -40,6 +40,7 @@
         button:disabled { background-color: #cccccc; cursor: not-allowed; }
         ul { list-style-type: none; padding: 0; }
         li { background-color: var(--list-item-bg-color); border: 1px solid var(--border-color); margin-bottom: 5px; padding: 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        li .controls { display: flex; }
         li button { margin-left: 10px; padding: 5px 10px; font-size: 14px; }
         #restaurant-list li { cursor: pointer; }
         #restaurant-list li:hover { background-color: #e9e9e9; }
@@ -100,6 +101,7 @@
                     <label>Notes (optional):</label>
                     <input type="text" id="order-item-notes" placeholder="Special requests, allergies, etc.">
                     <h3>Menu</h3>
+                    <input type="text" id="order-menu-search" placeholder="Search menu items..." style="width: calc(100% - 22px); margin-bottom: 10px;">
                     <ul id="order-menu-list"></ul>
                     <h3>Items in this Order</h3>
                     <ul id="current-order-items-list"></ul>
@@ -146,6 +148,7 @@
         const editOrdererButton = document.getElementById('edit-orderer-button');
         const orderUserNameInput = document.getElementById('order-user-name');
         const orderItemNotesInput = document.getElementById('order-item-notes');
+        const orderMenuSearchInput = document.getElementById('order-menu-search');
         const orderMenuList = document.getElementById('order-menu-list');
         const currentOrderItemsList = document.getElementById('current-order-items-list');
         const placeOrderForm = document.getElementById('place-order-form');
@@ -160,6 +163,8 @@
         let currentOpenOrder = null;
         let allOrders = [];
         let countdownInterval = null;
+        let menuItems = [];
+        let orderMenuItems = [];
 
         // Load and save user name for ordering
         const savedUserName = localStorage.getItem('orderUserName');
@@ -205,20 +210,27 @@
             orderRestaurantSelect.innerHTML = '<option value="">Select a restaurant</option>';
             restaurants.forEach(r => {
                 const li = document.createElement('li');
-                li.textContent = r.name;
-                li.style.cursor = 'pointer';
-                li.onclick = () => selectRestaurant(r);
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = r.name;
+                li.appendChild(nameSpan);
+                
+                const controlsDiv = document.createElement('div');
+                controlsDiv.className = 'controls';
 
                 const editButton = document.createElement('button');
                 editButton.textContent = 'Edit';
                 editButton.onclick = (e) => { e.stopPropagation(); editRestaurant(r.id, r.name); };
-                li.appendChild(editButton);
+                controlsDiv.appendChild(editButton);
 
                 const deleteButton = document.createElement('button');
                 deleteButton.textContent = 'Delete';
                 deleteButton.style.backgroundColor = '#e74c3c';
                 deleteButton.onclick = (e) => { e.stopPropagation(); deleteRestaurant(r.id); };
-                li.appendChild(deleteButton);
+                controlsDiv.appendChild(deleteButton);
+                
+                li.appendChild(controlsDiv);
+                li.style.cursor = 'pointer';
+                li.onclick = () => selectRestaurant(r);
 
                 restaurantList.appendChild(li);
 
@@ -271,21 +283,34 @@
             newItemPriceInput.disabled = false;
 
             const response = await fetch(`${apiUrl}/restaurants/${restaurant.id}/menu`);
-            const menuItems = await response.json();
+            menuItems = await response.json();
+            renderMenuItems();
+        };
+
+        const renderMenuItems = (filter = '') => {
             menuItemList.innerHTML = '';
-            menuItems.forEach(item => {
+            const filteredItems = menuItems.filter(item => item.name.toLowerCase().includes(filter.toLowerCase()));
+
+            filteredItems.forEach(item => {
                 const li = document.createElement('li');
-                li.textContent = `${item.name} - ${item.price}.ден`;
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = `${item.name} - ${item.price}.ден`;
+                li.appendChild(nameSpan);
+
+                const controlsDiv = document.createElement('div');
+                controlsDiv.className = 'controls';
 
                 const editButton = document.createElement('button');
                 editButton.textContent = 'Edit';
                 editButton.onclick = () => editMenuItem(item);
-                li.appendChild(editButton);
+                controlsDiv.appendChild(editButton);
 
                 const deleteButton = document.createElement('button');
                 deleteButton.textContent = 'Delete';
                 deleteButton.onclick = () => deleteMenuItem(item.id);
-                li.appendChild(deleteButton);
+                controlsDiv.appendChild(deleteButton);
+
+                li.appendChild(controlsDiv);
                 menuItemList.appendChild(li);
             });
         };
@@ -401,6 +426,7 @@
 
             if (response.ok) {
                 await fetchOpenOrder(restaurantId);
+                fetchOrderHistory();
             } else {
                 const error = await response.json();
                 alert(`Error: ${error.error}`);
@@ -409,9 +435,15 @@
 
         const loadMenuForOrder = async (restaurantId) => {
             const response = await fetch(`${apiUrl}/restaurants/${restaurantId}/menu`);
-            const menuItems = await response.json();
+            orderMenuItems = await response.json();
+            renderOrderMenuItems();
+        };
+
+        const renderOrderMenuItems = (filter = '') => {
             orderMenuList.innerHTML = '';
-            menuItems.forEach(item => {
+            const filteredItems = orderMenuItems.filter(item => item.name.toLowerCase().includes(filter.toLowerCase()));
+
+            filteredItems.forEach(item => {
                 const li = document.createElement('li');
                 li.textContent = `${item.name} - ${item.price}.ден`;
                 const addButton = document.createElement('button');
@@ -422,6 +454,10 @@
                 orderMenuList.appendChild(li);
             });
         };
+
+        orderMenuSearchInput.addEventListener('input', (e) => {
+            renderOrderMenuItems(e.target.value);
+        });
 
         // Edit the orderer's name
         editOrdererButton.onclick = async () => {
@@ -464,6 +500,7 @@
             });
             orderItemNotesInput.value = ''; // Clear notes after adding
             fetchOpenOrder(currentOpenOrder.restaurant_id);
+            fetchOrderHistory();
         };
 
         // Render items in the current open order
@@ -502,6 +539,7 @@
                         textSpan.textContent = itemText;
                         
                         const controlsDiv = document.createElement('div');
+                        controlsDiv.className = 'controls';
 
                         if (currentOpenOrder.status === 'open') {
                             const editButton = document.createElement('button');
